@@ -129,6 +129,8 @@ void bam_rmdup_core(samfile_t *in, samfile_t *out)
 			const char *lib;
 			lib_aux_t *q;
 			int ret;
+			uint8_t *dr;
+			uint32_t dr_count;
 			lib = bam_get_library(in->header, b);
 			q = lib? get_aux(aux, lib) : get_aux(aux, "\t");
 			++q->n_checked;
@@ -138,8 +140,27 @@ void bam_rmdup_core(samfile_t *in, samfile_t *out)
 				++q->n_removed;
 				if (sum_qual(p) < sum_qual(b)) { // the current alignment is better; this can be accelerated in principle
 					kh_put(name, del_set, strdup(bam1_qname(p)), &ret); // p will be removed
+					dr = bam_aux_get(p, "DR");
+					if (dr) {
+						dr_count = bam_aux2i(dr) + 1;
+					}
+					else {
+						dr_count = 1;
+					}
+					bam_aux_append(b, "DR", 'I', 4, (uint8_t *)&dr_count);
 					bam_copy1(p, b); // replaced as b
-				} else kh_put(name, del_set, strdup(bam1_qname(b)), &ret); // b will be removed
+				} else {
+					kh_put(name, del_set, strdup(bam1_qname(b)), &ret); // b will be removed
+					dr = bam_aux_get(p, "DR");
+					if (dr) {
+						dr_count = bam_aux2i(dr);
+						*(uint32_t *)(dr + 1) = dr_count + 1;
+					}
+					else {
+						dr_count = 1;
+						bam_aux_append(p, "DR", 'I', 4, (uint8_t *)&dr_count);
+					}
+                                }
 				if (ret == 0)
 					fprintf(stderr, "[bam_rmdup_core] inconsistent BAM file for pair '%s'. Continue anyway.\n", bam1_qname(b));
 			} else { // not found in best_hash
